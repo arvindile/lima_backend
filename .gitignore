@@ -1,1 +1,7 @@
-
+venv/
+__pycache__/
+*.pyc
+lima.db
+uploads/
+.env
+.idea/
