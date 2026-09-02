@@ -1,0 +1,101 @@
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.models import Match, MatchStatus, Player
+from app.schemas import MatchCreate, MatchFinish, MatchOut, ScoreUpdate
+from app.scoring import calculate_points, is_recordable
+
+router = APIRouter(prefix="/matches", tags=["matches"])
+
+
+@router.post("", response_model=MatchOut)
+def create_match(payload: MatchCreate, db: Session = Depends(get_db)):
+    for player_id in (payload.vanguard_id, payload.sentinel_id):
+        if not db.query(Player).filter(Player.id == player_id).first():
+            raise HTTPException(status_code=404, detail=f"Player {player_id} not found")
+
+    match = Match(
+        vanguard_id=payload.vanguard_id,
+        sentinel_id=payload.sentinel_id,
+        referee_id=payload.referee_id,
+        status=MatchStatus.IN_PROGRESS,
+    )
+    db.add(match)
+    db.commit()
+    db.refresh(match)
+    return match
+
+
+@router.patch("/{match_id}/score", response_model=MatchOut)
+def update_score(match_id: str, payload: ScoreUpdate, db: Session = Depends(get_db)):
+    match = _get_match_or_404(match_id, db)
+    if match.status != MatchStatus.IN_PROGRESS:
+        raise HTTPException(status_code=400, detail="Match is not in progress")
+
+    match.vanguard_score = payload.vanguard_score
+    match.sentinel_score = payload.sentinel_score
+    db.commit()
+    db.refresh(match)
+    return match
+
+
+@router.post("/{match_id}/finish", response_model=MatchOut)
+def finish_match(match_id: str, payload: MatchFinish, db: Session = Depends(get_db)):
+    match = _get_match_or_404(match_id, db)
+    if match.status != MatchStatus.IN_PROGRESS:
+        raise HTTPException(status_code=400, detail="Match is not in progress")
+
+    match.ended_at = datetime.utcnow()
+    match.total_time_seconds = payload.total_time_seconds
+    match.time_per_set_seconds = payload.time_per_set_seconds
+
+    recordable = is_recordable(payload.total_time_seconds, payload.time_per_set_seconds)
+
+    if not recordable:
+        match.status = MatchStatus.NOT_RECORDED
+        db.commit()
+        db.refresh(match)
+        return match
+
+    vanguard = db.query(Player).filter(Player.id == match.vanguard_id).first()
+    sentinel = db.query(Player).filter(Player.id == match.sentinel_id).first()
+
+    if match.vanguard_score == match.sentinel_score:
+        # Tie — recorded for history, but no points change hands.
+        match.status = MatchStatus.COMPLETED
+        vanguard.matches_played += 1
+        sentinel.matches_played += 1
+        db.commit()
+        db.refresh(match)
+        return match
+
+    winner_is_vanguard = match.vanguard_score > match.sentinel_score
+    winner, loser = (vanguard, sentinel) if winner_is_vanguard else (sentinel, vanguard)
+
+    result = calculate_points(winner_points=winner.points, loser_points=loser.points)
+
+    winner.points += result.points_to_winner
+    winner.wins += 1
+    winner.matches_played += 1
+    loser.points += result.points_to_loser
+    loser.losses += 1
+    loser.matches_played += 1
+
+    match.status = MatchStatus.COMPLETED
+    match.winner_id = winner.id
+    match.points_awarded_to_winner = result.points_to_winner
+    match.points_awarded_to_loser = result.points_to_loser
+
+    db.commit()
+    db.refresh(match)
+    return match
+
+
+def _get_match_or_404(match_id: str, db: Session) -> Match:
+    match = db.query(Match).filter(Match.id == match_id).first()
+    if not match:
+        raise HTTPException(status_code=404, detail="Match not found")
+    return match
