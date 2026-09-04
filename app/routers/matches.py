@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -13,6 +14,8 @@ router = APIRouter(prefix="/matches", tags=["matches"])
 
 @router.post("", response_model=MatchOut)
 def create_match(payload: MatchCreate, db: Session = Depends(get_db)):
+    """Creates a match invite — status starts as PENDING until the
+    opponent (sentinel) accepts it via /accept."""
     for player_id in (payload.vanguard_id, payload.sentinel_id):
         if not db.query(Player).filter(Player.id == player_id).first():
             raise HTTPException(status_code=404, detail=f"Player {player_id} not found")
@@ -21,9 +24,50 @@ def create_match(payload: MatchCreate, db: Session = Depends(get_db)):
         vanguard_id=payload.vanguard_id,
         sentinel_id=payload.sentinel_id,
         referee_id=payload.referee_id,
-        status=MatchStatus.IN_PROGRESS,
+        status=MatchStatus.PENDING,
     )
     db.add(match)
+    db.commit()
+    db.refresh(match)
+    return match
+
+
+@router.get("/pending/{player_id}", response_model=List[MatchOut])
+def list_pending_invites(player_id: str, db: Session = Depends(get_db)):
+    """Invites waiting for this player to accept/decline — they're always
+    the sentinel (opponent) side of a pending match."""
+    return (
+        db.query(Match)
+        .filter(Match.sentinel_id == player_id, Match.status == MatchStatus.PENDING)
+        .order_by(Match.started_at.desc())
+        .all()
+    )
+
+
+@router.get("/{match_id}", response_model=MatchOut)
+def get_match(match_id: str, db: Session = Depends(get_db)):
+    return _get_match_or_404(match_id, db)
+
+
+@router.post("/{match_id}/accept", response_model=MatchOut)
+def accept_match(match_id: str, db: Session = Depends(get_db)):
+    match = _get_match_or_404(match_id, db)
+    if match.status != MatchStatus.PENDING:
+        raise HTTPException(status_code=400, detail="Match is not pending")
+
+    match.status = MatchStatus.IN_PROGRESS
+    db.commit()
+    db.refresh(match)
+    return match
+
+
+@router.post("/{match_id}/decline", response_model=MatchOut)
+def decline_match(match_id: str, db: Session = Depends(get_db)):
+    match = _get_match_or_404(match_id, db)
+    if match.status != MatchStatus.PENDING:
+        raise HTTPException(status_code=400, detail="Match is not pending")
+
+    match.status = MatchStatus.DECLINED
     db.commit()
     db.refresh(match)
     return match

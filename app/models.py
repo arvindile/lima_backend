@@ -37,10 +37,12 @@ class Player(Base):
 
 
 class MatchStatus(str, enum.Enum):
+    PENDING = "PENDING"
     IN_PROGRESS = "IN_PROGRESS"
     PAUSED = "PAUSED"
     COMPLETED = "COMPLETED"
     NOT_RECORDED = "NOT_RECORDED"
+    DECLINED = "DECLINED"
 
 
 class Match(Base):
