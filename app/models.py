@@ -81,7 +81,7 @@ class Friendship(Base):
     id = Column(String, primary_key=True, default=_uuid)
     requester_id = Column(String, ForeignKey("players.id"), nullable=False)
     addressee_id = Column(String, ForeignKey("players.id"), nullable=False)
-    status = Column(Enum(FriendshipStatus), default=FriendshipStatus.PENDING, nullable=False)
+    status = Column(Enum(FriendshipStatus, native_enum=False), default=FriendshipStatus.PENDING, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
