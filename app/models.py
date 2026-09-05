@@ -61,7 +61,7 @@ class Match(Base):
     total_time_seconds = Column(BigInteger, default=0, nullable=False)
     time_per_set_seconds = Column(BigInteger, default=0, nullable=False)
 
-    status = Column(Enum(MatchStatus), default=MatchStatus.IN_PROGRESS, nullable=False)
+    status = Column(Enum(MatchStatus, native_enum=False), default=MatchStatus.IN_PROGRESS, nullable=False)
     winner_id = Column(String, ForeignKey("players.id"), nullable=True)
     points_awarded_to_winner = Column(Integer, nullable=True)
     points_awarded_to_loser = Column(Integer, nullable=True)
