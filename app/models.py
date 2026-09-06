@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, String, Integer, DateTime, Enum, ForeignKey, BigInteger
+from sqlalchemy import Column, String, Integer, DateTime, Enum, ForeignKey, BigInteger, Boolean
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -55,8 +55,18 @@ class Match(Base):
 
     vanguard_score = Column(Integer, default=0, nullable=False)
     sentinel_score = Column(Integer, default=0, nullable=False)
+    vanguard_sets_won = Column(Integer, default=0, nullable=False)
+    sentinel_sets_won = Column(Integer, default=0, nullable=False)
 
     started_at = Column(DateTime, default=datetime.utcnow)
+    # Set the moment the invite is ACCEPTED (not when it's created) — this is
+    # the real "clock zero" both devices compute elapsed time from, so the
+    # timer isn't polluted by however long the invite sat pending.
+    game_started_at = Column(DateTime, nullable=True)
+    is_paused = Column(Boolean, default=False, nullable=False)
+    paused_at = Column(DateTime, nullable=True)
+    total_paused_seconds = Column(Integer, default=0, nullable=False)
+
     ended_at = Column(DateTime, nullable=True)
     total_time_seconds = Column(BigInteger, default=0, nullable=False)
     time_per_set_seconds = Column(BigInteger, default=0, nullable=False)

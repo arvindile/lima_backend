@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Match, MatchStatus, Player
-from app.schemas import MatchCreate, MatchFinish, MatchOut, ScoreUpdate
+from app.schemas import LiveStateUpdate, MatchCreate, MatchFinish, MatchOut, ScoreUpdate
 from app.scoring import calculate_points, is_recordable
 
 router = APIRouter(prefix="/matches", tags=["matches"])
@@ -56,6 +56,9 @@ def accept_match(match_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Match is not pending")
 
     match.status = MatchStatus.IN_PROGRESS
+    # This is the real "clock zero" — not when the invite was created, since
+    # that could've been sitting pending for a while before acceptance.
+    match.game_started_at = datetime.utcnow()
     db.commit()
     db.refresh(match)
     return match
@@ -68,6 +71,38 @@ def decline_match(match_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Match is not pending")
 
     match.status = MatchStatus.DECLINED
+    db.commit()
+    db.refresh(match)
+    return match
+
+
+@router.patch("/{match_id}/live", response_model=MatchOut)
+def update_live_state(match_id: str, payload: LiveStateUpdate, db: Session = Depends(get_db)):
+    """
+    The backend is the single source of truth for a match IN PROGRESS.
+    Both devices push every score/set/pause change here immediately, and
+    both devices poll GET /matches/{id} to pick up what the other side did —
+    this is what keeps two phones showing the same live match instead of
+    each running its own disconnected copy.
+    """
+    match = _get_match_or_404(match_id, db)
+    if match.status != MatchStatus.IN_PROGRESS:
+        raise HTTPException(status_code=400, detail="Match is not in progress")
+
+    # Track accumulated paused time so elapsed-time math stays correct even
+    # though the timer itself is computed client-side from timestamps.
+    if payload.is_paused and not match.is_paused:
+        match.paused_at = datetime.utcnow()
+    elif not payload.is_paused and match.is_paused and match.paused_at:
+        match.total_paused_seconds += int((datetime.utcnow() - match.paused_at).total_seconds())
+        match.paused_at = None
+
+    match.vanguard_score = payload.vanguard_score
+    match.sentinel_score = payload.sentinel_score
+    match.vanguard_sets_won = payload.vanguard_sets_won
+    match.sentinel_sets_won = payload.sentinel_sets_won
+    match.is_paused = payload.is_paused
+
     db.commit()
     db.refresh(match)
     return match

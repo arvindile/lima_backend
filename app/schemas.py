@@ -54,12 +54,26 @@ class MatchOut(BaseModel):
     referee_id: Optional[str]
     vanguard_score: int
     sentinel_score: int
+    vanguard_sets_won: int
+    sentinel_sets_won: int
+    game_started_at: Optional[datetime]
+    is_paused: bool
+    paused_at: Optional[datetime]
+    total_paused_seconds: int
     status: MatchStatus
     total_time_seconds: int
     time_per_set_seconds: int
     winner_id: Optional[str]
     points_awarded_to_winner: Optional[int]
     points_awarded_to_loser: Optional[int]
+
+
+class LiveStateUpdate(BaseModel):
+    vanguard_score: int
+    sentinel_score: int
+    vanguard_sets_won: int
+    sentinel_sets_won: int
+    is_paused: bool
 
 
 class ScoreUpdate(BaseModel):
