@@ -119,3 +119,9 @@ class MessageOut(BaseModel):
     receiver_id: str
     content: str
     sent_at: datetime
+
+
+class ThreadOut(BaseModel):
+    friend: PlayerOut
+    last_message: Optional[str] = None
+    last_message_at: Optional[datetime] = None
