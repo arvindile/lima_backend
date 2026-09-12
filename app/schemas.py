@@ -35,6 +35,15 @@ class PlayerOut(BaseModel):
     losses: int
 
 
+class AuthResponse(BaseModel):
+    """Returned by both POST /players (register) and POST /auth/login, so
+    the app is signed in with a usable token the moment either succeeds."""
+
+    access_token: str
+    token_type: str = "bearer"
+    player: PlayerOut
+
+
 class UsernameUpdate(BaseModel):
     new_username: str
 

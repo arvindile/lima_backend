@@ -4,6 +4,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies import get_current_player
 from app.models import Friendship, FriendshipStatus, Player
 from app.schemas import (
     FriendRequestCreate,
@@ -16,7 +17,13 @@ router = APIRouter(prefix="/friends", tags=["friends"])
 
 
 @router.post("/request", response_model=FriendshipOut)
-def send_friend_request(payload: FriendRequestCreate, db: Session = Depends(get_db)):
+def send_friend_request(
+    payload: FriendRequestCreate,
+    db: Session = Depends(get_db),
+    current_player: Player = Depends(get_current_player),
+):
+    if current_player.id != payload.requester_id:
+        raise HTTPException(status_code=403, detail="You can only send a friend request as yourself")
     if payload.requester_id == payload.addressee_id:
         raise HTTPException(status_code=400, detail="Can't friend yourself")
 
@@ -49,10 +56,16 @@ def send_friend_request(payload: FriendRequestCreate, db: Session = Depends(get_
 
 
 @router.post("/{friendship_id}/accept", response_model=FriendshipOut)
-def accept_friend_request(friendship_id: str, db: Session = Depends(get_db)):
+def accept_friend_request(
+    friendship_id: str,
+    db: Session = Depends(get_db),
+    current_player: Player = Depends(get_current_player),
+):
     friendship = db.query(Friendship).filter(Friendship.id == friendship_id).first()
     if not friendship:
         raise HTTPException(status_code=404, detail="Friend request not found")
+    if current_player.id != friendship.addressee_id:
+        raise HTTPException(status_code=403, detail="Only the invited player can accept this request")
 
     friendship.status = FriendshipStatus.ACCEPTED
     db.commit()
@@ -61,10 +74,16 @@ def accept_friend_request(friendship_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/{friendship_id}/decline")
-def decline_friend_request(friendship_id: str, db: Session = Depends(get_db)):
+def decline_friend_request(
+    friendship_id: str,
+    db: Session = Depends(get_db),
+    current_player: Player = Depends(get_current_player),
+):
     friendship = db.query(Friendship).filter(Friendship.id == friendship_id).first()
     if not friendship:
         raise HTTPException(status_code=404, detail="Friend request not found")
+    if current_player.id != friendship.addressee_id:
+        raise HTTPException(status_code=403, detail="Only the invited player can decline this request")
 
     db.delete(friendship)
     db.commit()

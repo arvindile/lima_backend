@@ -5,10 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.auth import hash_password
+from app.auth import create_access_token, hash_password
 from app.database import get_db
+from app.dependencies import get_current_player
 from app.models import Player
-from app.schemas import PlayerCreate, PlayerOut, UsernameUpdate
+from app.schemas import AuthResponse, PlayerCreate, PlayerOut, UsernameUpdate
 from app.storage import save_avatar
 
 router = APIRouter(prefix="/players", tags=["players"])
@@ -17,7 +18,7 @@ ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5MB
 
 
-@router.post("", response_model=PlayerOut)
+@router.post("", response_model=AuthResponse)
 def register_player(payload: PlayerCreate, db: Session = Depends(get_db)):
     existing = db.query(Player).filter(Player.username == payload.username).first()
     if existing:
@@ -34,7 +35,11 @@ def register_player(payload: PlayerCreate, db: Session = Depends(get_db)):
     db.add(player)
     db.commit()
     db.refresh(player)
-    return player
+
+    # Same shape as /auth/login, so the app is signed in immediately after
+    # registering instead of needing a separate login call right after.
+    token = create_access_token(player.id)
+    return AuthResponse(access_token=token, player=player)
 
 
 @router.get("/search", response_model=List[PlayerOut])
@@ -56,10 +61,16 @@ def get_player(player_id: str, db: Session = Depends(get_db)):
 
 
 @router.patch("/{player_id}/username", response_model=PlayerOut)
-def update_username(player_id: str, payload: UsernameUpdate, db: Session = Depends(get_db)):
-    player = db.query(Player).filter(Player.id == player_id).first()
-    if not player:
-        raise HTTPException(status_code=404, detail="Player not found")
+def update_username(
+    player_id: str,
+    payload: UsernameUpdate,
+    db: Session = Depends(get_db),
+    current_player: Player = Depends(get_current_player),
+):
+    if current_player.id != player_id:
+        raise HTTPException(status_code=403, detail="You can only change your own username")
+
+    player = current_player
 
     if player.username_last_changed_at and player.username_last_changed_at > datetime.utcnow() - timedelta(days=30):
         raise HTTPException(status_code=429, detail="Username can only be changed once per month")
@@ -76,10 +87,16 @@ def update_username(player_id: str, payload: UsernameUpdate, db: Session = Depen
 
 
 @router.post("/{player_id}/avatar", response_model=PlayerOut)
-def upload_avatar(player_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
-    player = db.query(Player).filter(Player.id == player_id).first()
-    if not player:
-        raise HTTPException(status_code=404, detail="Player not found")
+def upload_avatar(
+    player_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_player: Player = Depends(get_current_player),
+):
+    if current_player.id != player_id:
+        raise HTTPException(status_code=403, detail="You can only change your own avatar")
+
+    player = current_player
 
     if file.content_type not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(status_code=400, detail="Only JPEG, PNG, or WEBP images are allowed")

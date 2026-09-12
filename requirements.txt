@@ -7,3 +7,5 @@ python-dotenv==1.0.1
 python-multipart==0.0.9
 alembic==1.14.0
 pg8000==1.31.2
+cloudinary==1.41.0
+PyJWT==2.9.0

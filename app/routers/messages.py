@@ -6,6 +6,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies import get_current_player
 from app.models import Friendship, FriendshipStatus, Message, Player
 from app.schemas import MessageCreate, MessageOut, ThreadOut
 
@@ -13,7 +14,14 @@ router = APIRouter(prefix="/messages", tags=["messages"])
 
 
 @router.post("", response_model=MessageOut)
-def send_message(payload: MessageCreate, db: Session = Depends(get_db)):
+def send_message(
+    payload: MessageCreate,
+    db: Session = Depends(get_db),
+    current_player: Player = Depends(get_current_player),
+):
+    if current_player.id != payload.sender_id:
+        raise HTTPException(status_code=403, detail="You can only send messages as yourself")
+
     for player_id in (payload.sender_id, payload.receiver_id):
         if not db.query(Player).filter(Player.id == player_id).first():
             raise HTTPException(status_code=404, detail=f"Player {player_id} not found")

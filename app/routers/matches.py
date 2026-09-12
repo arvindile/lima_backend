@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies import get_current_player
 from app.models import Match, MatchStatus, Player
 from app.schemas import LiveStateUpdate, MatchCreate, MatchFinish, MatchOut, ScoreUpdate
 from app.scoring import calculate_points, is_recordable
@@ -13,9 +14,16 @@ router = APIRouter(prefix="/matches", tags=["matches"])
 
 
 @router.post("", response_model=MatchOut)
-def create_match(payload: MatchCreate, db: Session = Depends(get_db)):
+def create_match(
+    payload: MatchCreate,
+    db: Session = Depends(get_db),
+    current_player: Player = Depends(get_current_player),
+):
     """Creates a match invite — status starts as PENDING until the
     opponent (sentinel) accepts it via /accept."""
+    if current_player.id != payload.vanguard_id:
+        raise HTTPException(status_code=403, detail="You can only send an invite as yourself")
+
     for player_id in (payload.vanguard_id, payload.sentinel_id):
         if not db.query(Player).filter(Player.id == player_id).first():
             raise HTTPException(status_code=404, detail=f"Player {player_id} not found")
@@ -50,8 +58,14 @@ def get_match(match_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/{match_id}/accept", response_model=MatchOut)
-def accept_match(match_id: str, db: Session = Depends(get_db)):
+def accept_match(
+    match_id: str,
+    db: Session = Depends(get_db),
+    current_player: Player = Depends(get_current_player),
+):
     match = _get_match_or_404(match_id, db)
+    if current_player.id != match.sentinel_id:
+        raise HTTPException(status_code=403, detail="Only the invited player can accept this match")
     if match.status != MatchStatus.PENDING:
         raise HTTPException(status_code=400, detail="Match is not pending")
 
@@ -65,8 +79,14 @@ def accept_match(match_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/{match_id}/decline", response_model=MatchOut)
-def decline_match(match_id: str, db: Session = Depends(get_db)):
+def decline_match(
+    match_id: str,
+    db: Session = Depends(get_db),
+    current_player: Player = Depends(get_current_player),
+):
     match = _get_match_or_404(match_id, db)
+    if current_player.id != match.sentinel_id:
+        raise HTTPException(status_code=403, detail="Only the invited player can decline this match")
     if match.status != MatchStatus.PENDING:
         raise HTTPException(status_code=400, detail="Match is not pending")
 
@@ -77,7 +97,12 @@ def decline_match(match_id: str, db: Session = Depends(get_db)):
 
 
 @router.patch("/{match_id}/live", response_model=MatchOut)
-def update_live_state(match_id: str, payload: LiveStateUpdate, db: Session = Depends(get_db)):
+def update_live_state(
+    match_id: str,
+    payload: LiveStateUpdate,
+    db: Session = Depends(get_db),
+    current_player: Player = Depends(get_current_player),
+):
     """
     The backend is the single source of truth for a match IN PROGRESS.
     Both devices push every score/set/pause change here immediately, and
@@ -86,6 +111,8 @@ def update_live_state(match_id: str, payload: LiveStateUpdate, db: Session = Dep
     each running its own disconnected copy.
     """
     match = _get_match_or_404(match_id, db)
+    if current_player.id not in (match.vanguard_id, match.sentinel_id):
+        raise HTTPException(status_code=403, detail="You're not a participant in this match")
     if match.status != MatchStatus.IN_PROGRESS:
         raise HTTPException(status_code=400, detail="Match is not in progress")
 
@@ -109,8 +136,15 @@ def update_live_state(match_id: str, payload: LiveStateUpdate, db: Session = Dep
 
 
 @router.patch("/{match_id}/score", response_model=MatchOut)
-def update_score(match_id: str, payload: ScoreUpdate, db: Session = Depends(get_db)):
+def update_score(
+    match_id: str,
+    payload: ScoreUpdate,
+    db: Session = Depends(get_db),
+    current_player: Player = Depends(get_current_player),
+):
     match = _get_match_or_404(match_id, db)
+    if current_player.id not in (match.vanguard_id, match.sentinel_id):
+        raise HTTPException(status_code=403, detail="You're not a participant in this match")
     if match.status != MatchStatus.IN_PROGRESS:
         raise HTTPException(status_code=400, detail="Match is not in progress")
 
@@ -122,8 +156,15 @@ def update_score(match_id: str, payload: ScoreUpdate, db: Session = Depends(get_
 
 
 @router.post("/{match_id}/finish", response_model=MatchOut)
-def finish_match(match_id: str, payload: MatchFinish, db: Session = Depends(get_db)):
+def finish_match(
+    match_id: str,
+    payload: MatchFinish,
+    db: Session = Depends(get_db),
+    current_player: Player = Depends(get_current_player),
+):
     match = _get_match_or_404(match_id, db)
+    if current_player.id not in (match.vanguard_id, match.sentinel_id):
+        raise HTTPException(status_code=403, detail="You're not a participant in this match")
     if match.status != MatchStatus.IN_PROGRESS:
         raise HTTPException(status_code=400, detail="Match is not in progress")
 
