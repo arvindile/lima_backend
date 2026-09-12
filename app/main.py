@@ -14,9 +14,10 @@ os.makedirs("uploads", exist_ok=True)
 
 app = FastAPI(title="LIMA API", version="0.1.0")
 
-# Serves uploaded avatar images back out at /uploads/<filename> — this is
-# local disk storage, fine for development. A real deployment would swap
-# this for cloud storage (S3, GCS, etc).
+# Local-disk fallback only — avatars are served from Cloudinary in
+# production (see app/storage.py) whenever CLOUDINARY_* env vars are set,
+# since Render's disk doesn't survive a redeploy. This mount just keeps
+# local dev working when no Cloudinary account is configured.
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 app.include_router(players.router)

@@ -1,5 +1,3 @@
-import os
-import uuid
 from typing import List
 from datetime import datetime, timedelta
 
@@ -11,10 +9,10 @@ from app.auth import hash_password
 from app.database import get_db
 from app.models import Player
 from app.schemas import PlayerCreate, PlayerOut, UsernameUpdate
+from app.storage import save_avatar
 
 router = APIRouter(prefix="/players", tags=["players"])
 
-UPLOAD_DIR = "uploads"
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5MB
 
@@ -90,14 +88,7 @@ def upload_avatar(player_id: str, file: UploadFile = File(...), db: Session = De
     if len(contents) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=400, detail="Image must be under 5MB")
 
-    extension = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}[file.content_type]
-    filename = f"{uuid.uuid4()}{extension}"
-    filepath = os.path.join(UPLOAD_DIR, filename)
-
-    with open(filepath, "wb") as f:
-        f.write(contents)
-
-    player.avatar_url = f"/uploads/{filename}"
+    player.avatar_url = save_avatar(player_id, contents, file.content_type)
     db.commit()
     db.refresh(player)
     return player
