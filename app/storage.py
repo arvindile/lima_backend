@@ -61,12 +61,17 @@ def save_avatar(player_id: str, contents: bytes, content_type: str) -> str:
     if _cloudinary_ready():
         import cloudinary.uploader
 
-        # public_id is the player's own id, so re-uploading a new avatar
-        # overwrites the same Cloudinary asset instead of piling up orphaned
-        # images every time someone changes their picture.
+        # Cloudinary accounts created since mid-2024 use "Dynamic Folder
+        # Mode," where slashes inside public_id are just literal characters
+        # in the ID — they no longer place the file into a matching folder.
+        # asset_folder is the parameter that actually controls where it's
+        # organized in the Media Library. public_id stays as just the
+        # player's own id (no slashes needed), so re-uploading a new avatar
+        # overwrites the same asset instead of piling up orphaned images.
         result = cloudinary.uploader.upload(
             contents,
-            public_id=f"lima/avatars/{player_id}",
+            public_id=player_id,
+            asset_folder="lima/avatars",
             overwrite=True,
             resource_type="image",
         )
