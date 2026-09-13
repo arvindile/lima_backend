@@ -1,3 +1,4 @@
+import secrets
 from typing import List
 from datetime import datetime, timedelta
 
@@ -8,9 +9,9 @@ from sqlalchemy.orm import Session
 from app.auth import create_access_token, hash_password
 from app.database import get_db
 from app.dependencies import get_current_player
-from app.models import Player
+from app.models import Friendship, Match, MatchStatus, Message, Player
 from app.schemas import AuthResponse, PlayerCreate, PlayerOut, UsernameUpdate
-from app.storage import save_avatar
+from app.storage import delete_avatar, save_avatar
 
 router = APIRouter(prefix="/players", tags=["players"])
 
@@ -40,6 +41,65 @@ def register_player(payload: PlayerCreate, db: Session = Depends(get_db)):
     # registering instead of needing a separate login call right after.
     token = create_access_token(player.id)
     return AuthResponse(access_token=token, player=player)
+
+
+@router.delete("/me", status_code=204)
+def delete_my_account(
+    db: Session = Depends(get_db),
+    current_player: Player = Depends(get_current_player),
+):
+    """
+    Deletes the caller's OWN account — matches what the in-app
+    "Data & Privacy Requests" page promises users.
+
+    The player row is anonymized rather than hard-deleted: Match rows
+    reference players.id with no ON DELETE clause, so removing the row
+    outright would break match history for every OTHER player this
+    account ever played against. Anonymizing keeps the row (and their
+    match history) intact while making the account itself unusable and
+    unidentifiable — the same "kept in anonymized form" behavior already
+    described to users.
+
+    Friendships and chat messages ARE deleted outright rather than
+    anonymized — that's this account's own social data, and doesn't
+    affect any other player's independent record the way match history
+    would.
+    """
+    player_id = current_player.id
+
+    db.query(Message).filter(
+        or_(Message.sender_id == player_id, Message.receiver_id == player_id),
+    ).delete(synchronize_session=False)
+
+    db.query(Friendship).filter(
+        or_(Friendship.requester_id == player_id, Friendship.addressee_id == player_id),
+    ).delete(synchronize_session=False)
+
+    # Any invite still waiting on this player is now stale — decline it
+    # rather than leaving it stuck pending forever.
+    pending_invites = (
+        db.query(Match)
+        .filter(
+            Match.status == MatchStatus.PENDING,
+            or_(Match.vanguard_id == player_id, Match.sentinel_id == player_id),
+        )
+        .all()
+    )
+    for match in pending_invites:
+        match.status = MatchStatus.DECLINED
+
+    delete_avatar(player_id)  # best-effort — never blocks deletion
+
+    # Anonymize the account. The new username is derived from the id
+    # (already globally unique, so this can never collide), and the
+    # password hash is replaced with something nobody could ever type —
+    # combined with is_deleted being checked on every authenticated
+    # request, there's no path back into this account.
+    current_player.username = f"deleted_user_{player_id[:8]}"
+    current_player.password_hash = hash_password(secrets.token_hex(32))
+    current_player.avatar_url = None
+    current_player.is_deleted = True
+    db.commit()
 
 
 @router.get("/search", response_model=List[PlayerOut])

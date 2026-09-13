@@ -33,6 +33,14 @@ class Player(Base):
     wins = Column(Integer, default=0, nullable=False)
     losses = Column(Integer, default=0, nullable=False)
 
+    # Set by DELETE /players/me. The row itself is kept (not hard-deleted)
+    # because Match rows reference players.id with no ON DELETE clause —
+    # hard-deleting would break every match another player was ever part
+    # of with this account. Deleting instead anonymizes the personal
+    # fields in place and blocks the account from being used again; see
+    # app/routers/players.py for exactly what gets scrubbed.
+    is_deleted = Column(Boolean, default=False, nullable=False)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

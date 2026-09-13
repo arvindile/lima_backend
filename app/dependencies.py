@@ -36,5 +36,11 @@ def get_current_player(
     player = db.query(Player).filter(Player.id == player_id).first()
     if not player:
         raise HTTPException(status_code=401, detail="Player no longer exists")
+    if player.is_deleted:
+        # The account was deleted after this token was issued (tokens are
+        # valid for 30 days and aren't individually revocable) — reject it
+        # explicitly rather than letting a deleted account keep working
+        # until the token naturally expires.
+        raise HTTPException(status_code=401, detail="This account has been deleted")
 
     return player

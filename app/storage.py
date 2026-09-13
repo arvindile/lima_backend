@@ -84,3 +84,20 @@ def save_avatar(player_id: str, contents: bytes, content_type: str) -> str:
     with open(filepath, "wb") as f:
         f.write(contents)
     return f"/uploads/{filename}"
+
+
+def delete_avatar(player_id: str) -> None:
+    """Removes a player's avatar from Cloudinary, if it's stored there.
+
+    Used by account deletion. Failures here are non-fatal — the account
+    deletion itself (personal data cleared from the database) matters far
+    more than tidying up an orphaned image, so this never raises.
+    """
+    if not _cloudinary_ready():
+        return
+    import cloudinary.uploader
+
+    try:
+        cloudinary.uploader.destroy(player_id, resource_type="image")
+    except Exception:
+        pass
