@@ -9,6 +9,7 @@ from app.models import MatchStatus
 class PlayerCreate(BaseModel):
     username: str
     password: str
+    email: str
     barangay_id: str
     city_id: str
     province_id: str
@@ -35,17 +36,44 @@ class PlayerOut(BaseModel):
     losses: int
 
 
+class PlayerSelfOut(PlayerOut):
+    """
+    PlayerOut plus the caller's own email — used ONLY for endpoints that
+    return a player's own data to themselves (register, login, /auth/me,
+    updating their email). Every endpoint that returns OTHER players'
+    data (search, leaderboard, GET /players/{id}) uses plain PlayerOut,
+    which has no email field at all, so there's no path for one player's
+    email to leak to another through the API.
+    """
+
+    email: Optional[str] = None
+
+
 class AuthResponse(BaseModel):
     """Returned by both POST /players (register) and POST /auth/login, so
     the app is signed in with a usable token the moment either succeeds."""
 
     access_token: str
     token_type: str = "bearer"
-    player: PlayerOut
+    player: PlayerSelfOut
 
 
 class UsernameUpdate(BaseModel):
     new_username: str
+
+
+class EmailUpdate(BaseModel):
+    new_email: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    code: str
+    new_password: str
 
 
 class MatchCreate(BaseModel):

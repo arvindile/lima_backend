@@ -21,6 +21,15 @@ class Player(Base):
     avatar_url = Column(String, nullable=True)
     points = Column(Integer, default=0, nullable=False)
 
+    # Recovery email. Nullable because accounts created before this feature
+    # existed don't have one yet — the Profile screen lets them add one.
+    # New registrations require it going forward. NULL values don't collide
+    # under a unique constraint (standard SQL behavior), so multiple
+    # emailless legacy accounts can coexist fine.
+    email = Column(String, unique=True, nullable=True, index=True)
+    password_reset_code = Column(String, nullable=True)
+    password_reset_expires_at = Column(DateTime, nullable=True)
+
     # Denormalized region fields — every leaderboard query is a flat
     # WHERE + ORDER BY + LIMIT against these, no proportional-slice
     # aggregation needed at any level.

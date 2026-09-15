@@ -1,11 +1,15 @@
+import random
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.auth import create_access_token, verify_password
+from app.auth import create_access_token, hash_password, verify_password
 from app.database import get_db
 from app.dependencies import get_current_player
+from app.email_utils import RESET_CODE_EXPIRY_MINUTES, send_password_reset_email
 from app.models import Player
-from app.schemas import AuthResponse, LoginRequest, PlayerOut
+from app.schemas import AuthResponse, ForgotPasswordRequest, LoginRequest, PlayerSelfOut, ResetPasswordRequest
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -19,7 +23,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     return AuthResponse(access_token=token, player=player)
 
 
-@router.get("/me", response_model=PlayerOut)
+@router.get("/me", response_model=PlayerSelfOut)
 def get_me(current_player: Player = Depends(get_current_player)):
     """
     Lets the app restore a session on startup: send the saved token, get
@@ -28,3 +32,43 @@ def get_me(current_player: Player = Depends(get_current_player)):
     screen instead of trusting stale local data.
     """
     return current_player
+
+
+@router.post("/forgot-password")
+def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """
+    Starts a password reset: if the email belongs to an account, emails a
+    6-digit code. Always returns the SAME response either way — this
+    stops the endpoint from being usable to check which emails have a
+    LIMA account (a common enumeration attack on forgot-password flows).
+    """
+    email = payload.email.strip().lower()
+    player = db.query(Player).filter(Player.email == email, Player.is_deleted == False).first()  # noqa: E712
+
+    if player:
+        code = f"{random.randint(0, 999999):06d}"
+        player.password_reset_code = code
+        player.password_reset_expires_at = datetime.utcnow() + timedelta(minutes=RESET_CODE_EXPIRY_MINUTES)
+        db.commit()
+        send_password_reset_email(email, code)
+
+    return {"message": "If that email is registered, a reset code has been sent to it."}
+
+
+@router.post("/reset-password")
+def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
+    email = payload.email.strip().lower()
+    player = db.query(Player).filter(Player.email == email, Player.is_deleted == False).first()  # noqa: E712
+
+    code_matches = player and player.password_reset_code == payload.code
+    not_expired = player and player.password_reset_expires_at and player.password_reset_expires_at > datetime.utcnow()
+
+    if not (player and code_matches and not_expired):
+        raise HTTPException(status_code=400, detail="Invalid or expired reset code")
+
+    player.password_hash = hash_password(payload.new_password)
+    player.password_reset_code = None
+    player.password_reset_expires_at = None
+    db.commit()
+
+    return {"message": "Password reset successfully. You can now log in."}

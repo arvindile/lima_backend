@@ -1,3 +1,4 @@
+import re
 import secrets
 from typing import List
 from datetime import datetime, timedelta
@@ -10,13 +11,27 @@ from app.auth import create_access_token, hash_password
 from app.database import get_db
 from app.dependencies import get_current_player
 from app.models import Friendship, Match, MatchStatus, Message, Player
-from app.schemas import AuthResponse, PlayerCreate, PlayerOut, UsernameUpdate
+from app.schemas import AuthResponse, EmailUpdate, PlayerCreate, PlayerOut, PlayerSelfOut, UsernameUpdate
 from app.storage import delete_avatar, save_avatar
 
 router = APIRouter(prefix="/players", tags=["players"])
 
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5MB
+
+# Deliberately loose — just enough to catch obvious typos ("bob@gmail")
+# and reject empty/garbage input, not a full RFC 5322 validator. Doing a
+# real check would mean adding the email-validator package as a new
+# dependency for one field; this catches the vast majority of real
+# mistakes without that.
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _validate_email(email: str) -> str:
+    email = email.strip().lower()
+    if not EMAIL_PATTERN.match(email):
+        raise HTTPException(status_code=400, detail="That doesn't look like a valid email address")
+    return email
 
 
 @router.post("", response_model=AuthResponse)
@@ -25,9 +40,15 @@ def register_player(payload: PlayerCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=409, detail="Username already taken")
 
+    email = _validate_email(payload.email)
+    existing_email = db.query(Player).filter(Player.email == email).first()
+    if existing_email:
+        raise HTTPException(status_code=409, detail="An account with that email already exists")
+
     player = Player(
         username=payload.username,
         password_hash=hash_password(payload.password),
+        email=email,
         avatar_url=payload.avatar_url,
         barangay_id=payload.barangay_id,
         city_id=payload.city_id,
@@ -144,6 +165,33 @@ def update_username(
     db.commit()
     db.refresh(player)
     return player
+
+
+@router.patch("/{player_id}/email", response_model=PlayerSelfOut)
+def update_email(
+    player_id: str,
+    payload: EmailUpdate,
+    db: Session = Depends(get_db),
+    current_player: Player = Depends(get_current_player),
+):
+    """
+    Lets a player add or change their recovery email. This is how
+    accounts created BEFORE this feature existed (with no email on file)
+    get one added — without an email here, /auth/forgot-password has no
+    way to reach that account at all.
+    """
+    if current_player.id != player_id:
+        raise HTTPException(status_code=403, detail="You can only change your own email")
+
+    email = _validate_email(payload.new_email)
+    taken = db.query(Player).filter(Player.email == email, Player.id != player_id).first()
+    if taken:
+        raise HTTPException(status_code=409, detail="An account with that email already exists")
+
+    current_player.email = email
+    db.commit()
+    db.refresh(current_player)
+    return current_player
 
 
 @router.post("/{player_id}/avatar", response_model=PlayerOut)
