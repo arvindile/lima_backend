@@ -1,6 +1,7 @@
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 import jwt
+import os
 
 from app.auth import decode_access_token
 from app.database import get_db
@@ -42,5 +43,26 @@ def get_current_player(
         # explicitly rather than letting a deleted account keep working
         # until the token naturally expires.
         raise HTTPException(status_code=401, detail="This account has been deleted")
+    if player.is_banned:
+        raise HTTPException(status_code=403, detail="Your account has been suspended")
 
     return player
+
+
+ADMIN_API_KEY = os.getenv("ADMIN_API_KEY")
+
+
+def require_admin(x_admin_key: str = Header(None)):
+    """
+    Gates the review/ban endpoints in app/routers/admin.py. This is a
+    deliberately minimal stopgap — a single shared secret, not a real
+    admin role system — until there's an actual admin panel. Set
+    ADMIN_API_KEY as a Render env var and send it as the X-Admin-Key
+    header (e.g. from Postman) to use these endpoints. Treat this key
+    with the same care as JWT_SECRET_KEY — anyone with it can ban any
+    account.
+    """
+    if not ADMIN_API_KEY:
+        raise HTTPException(status_code=503, detail="Admin access isn't configured on this server")
+    if not x_admin_key or x_admin_key != ADMIN_API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid admin key")

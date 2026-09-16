@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import get_current_player
 from app.models import Friendship, FriendshipStatus, Message, Player
+from app.routers.blocks import is_blocked_either_way
 from app.schemas import MessageCreate, MessageOut, ThreadOut
 
 router = APIRouter(prefix="/messages", tags=["messages"])
@@ -25,6 +26,9 @@ def send_message(
     for player_id in (payload.sender_id, payload.receiver_id):
         if not db.query(Player).filter(Player.id == player_id).first():
             raise HTTPException(status_code=404, detail=f"Player {player_id} not found")
+
+    if is_blocked_either_way(db, payload.sender_id, payload.receiver_id):
+        raise HTTPException(status_code=403, detail="You can't message this player")
 
     message = Message(
         sender_id=payload.sender_id,

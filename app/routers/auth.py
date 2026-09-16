@@ -19,6 +19,12 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     player = db.query(Player).filter(Player.username == payload.username).first()
     if not player or not verify_password(payload.password, player.password_hash):
         raise HTTPException(status_code=401, detail="Invalid username or password")
+    if player.is_banned:
+        # Deliberately distinct from the generic 401 above — a banned
+        # player DID enter the right password, so telling them that
+        # explicitly isn't a security leak the way it would be for a
+        # wrong-password guess, and it's much clearer for them to see.
+        raise HTTPException(status_code=403, detail="Your account has been suspended")
     token = create_access_token(player.id)
     return AuthResponse(access_token=token, player=player)
 

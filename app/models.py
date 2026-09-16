@@ -50,6 +50,11 @@ class Player(Base):
     # app/routers/players.py for exactly what gets scrubbed.
     is_deleted = Column(Boolean, default=False, nullable=False)
 
+    # Set by an admin action (see app/routers/admin.py), distinct from
+    # is_deleted: a ban is reversible and doesn't touch the account's data
+    # or identity, it just blocks login/authenticated access until lifted.
+    is_banned = Column(Boolean, default=False, nullable=False)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -120,6 +125,46 @@ class Message(Base):
     receiver_id = Column(String, ForeignKey("players.id"), nullable=False)
     content = Column(String, nullable=False)
     sent_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class Block(Base):
+    """
+    One-directional: blocker_id has blocked blocked_id. Checked before
+    sending a message, a friend request, or a match invite — see the
+    respective routers. A brand-new table, so it's created automatically
+    by Base.metadata.create_all() on next deploy; no migration script
+    needed (unlike adding a column to an existing table).
+    """
+    __tablename__ = "blocks"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    blocker_id = Column(String, ForeignKey("players.id"), nullable=False, index=True)
+    blocked_id = Column(String, ForeignKey("players.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ReportStatus(str, enum.Enum):
+    OPEN = "OPEN"
+    RESOLVED = "RESOLVED"
+    DISMISSED = "DISMISSED"
+
+
+class Report(Base):
+    """
+    A player flagging another player's behavior for manual review.
+    There's no admin UI yet — see app/routers/admin.py for the
+    shared-secret-protected endpoints used to review these and act on
+    them (ban/unban) until a real admin panel exists.
+    """
+    __tablename__ = "reports"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    reporter_id = Column(String, ForeignKey("players.id"), nullable=False)
+    reported_id = Column(String, ForeignKey("players.id"), nullable=False, index=True)
+    reason = Column(String, nullable=False)
+    details = Column(String, nullable=True)
+    status = Column(Enum(ReportStatus, native_enum=False), default=ReportStatus.OPEN, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class PhAddress(Base):

@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.database import Base, engine
-from app.routers import auth, friends, leaderboard, matches, messages, players, regions
+from app.routers import admin, auth, blocks, friends, leaderboard, matches, messages, players, regions, reports
 
 # For local dev this creates tables automatically from the SQLAlchemy models.
 # For production, prefer Alembic migrations instead of relying on this.
@@ -27,6 +27,9 @@ app.include_router(friends.router)
 app.include_router(messages.router)
 app.include_router(auth.router)
 app.include_router(regions.router)
+app.include_router(blocks.router)
+app.include_router(reports.router)
+app.include_router(admin.router)
 
 
 @app.get("/health")

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import get_current_player
 from app.models import Match, MatchStatus, Player
+from app.routers.blocks import is_blocked_either_way
 from app.schemas import LiveStateUpdate, MatchCreate, MatchFinish, MatchOut, ScoreUpdate
 from app.scoring import calculate_points, is_recordable
 
@@ -27,6 +28,9 @@ def create_match(
     for player_id in (payload.vanguard_id, payload.sentinel_id):
         if not db.query(Player).filter(Player.id == player_id).first():
             raise HTTPException(status_code=404, detail=f"Player {player_id} not found")
+
+    if is_blocked_either_way(db, payload.vanguard_id, payload.sentinel_id):
+        raise HTTPException(status_code=403, detail="You can't invite this player to a match")
 
     match = Match(
         vanguard_id=payload.vanguard_id,

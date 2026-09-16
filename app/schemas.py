@@ -162,3 +162,44 @@ class ThreadOut(BaseModel):
     friend: PlayerOut
     last_message: Optional[str] = None
     last_message_at: Optional[datetime] = None
+
+
+class BlockCreate(BaseModel):
+    blocked_id: str
+
+
+class BlockOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    blocked_id: str
+    blocked_username: str
+    created_at: datetime
+
+
+REPORT_REASONS = (
+    "harassment",
+    "inappropriate_content",
+    "cheating",
+    "spam",
+    "fake_account",
+    "other",
+)
+
+
+class ReportCreate(BaseModel):
+    reported_id: str
+    reason: str
+    details: Optional[str] = None
+
+
+class ReportOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    reporter_id: str
+    reported_id: str
+    reason: str
+    details: Optional[str]
+    status: str
+    created_at: datetime
