@@ -3,7 +3,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models import MatchStatus
+from app.models import MatchCategory, MatchStatus
 
 
 class PlayerCreate(BaseModel):
@@ -34,6 +34,10 @@ class PlayerOut(BaseModel):
     matches_played: int
     wins: int
     losses: int
+    doubles_points: int
+    doubles_matches_played: int
+    doubles_wins: int
+    doubles_losses: int
 
 
 class PlayerSelfOut(PlayerOut):
@@ -80,15 +84,26 @@ class MatchCreate(BaseModel):
     vanguard_id: str
     sentinel_id: str
     referee_id: Optional[str] = None
+    category: MatchCategory = MatchCategory.SINGLES
+    # Required (and must be two DISTINCT other players) when category is
+    # DOUBLES; ignored for SINGLES.
+    vanguard_partner_id: Optional[str] = None
+    sentinel_partner_id: Optional[str] = None
 
 
 class MatchOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    category: MatchCategory
     vanguard_id: str
     sentinel_id: str
     referee_id: Optional[str]
+    vanguard_partner_id: Optional[str]
+    sentinel_partner_id: Optional[str]
+    vanguard_partner_accepted: bool
+    sentinel_accepted: bool
+    sentinel_partner_accepted: bool
     vanguard_score: int
     sentinel_score: int
     vanguard_sets_won: int

@@ -42,6 +42,17 @@ class Player(Base):
     wins = Column(Integer, default=0, nullable=False)
     losses = Column(Integer, default=0, nullable=False)
 
+    # Doubles is tracked as its own separate ranking, not folded into the
+    # fields above — a strong singles player and a strong doubles player
+    # aren't necessarily the same skill, same as real pickleball ranking
+    # systems. See app/scoring.py and app/routers/matches.py for how these
+    # get updated (only on DOUBLES matches; the fields above only change
+    # on SINGLES matches).
+    doubles_points = Column(Integer, default=0, nullable=False)
+    doubles_matches_played = Column(Integer, default=0, nullable=False)
+    doubles_wins = Column(Integer, default=0, nullable=False)
+    doubles_losses = Column(Integer, default=0, nullable=False)
+
     # Set by DELETE /players/me. The row itself is kept (not hard-deleted)
     # because Match rows reference players.id with no ON DELETE clause —
     # hard-deleting would break every match another player was ever part
@@ -67,13 +78,33 @@ class MatchStatus(str, enum.Enum):
     DECLINED = "DECLINED"
 
 
+class MatchCategory(str, enum.Enum):
+    SINGLES = "SINGLES"
+    DOUBLES = "DOUBLES"
+
+
 class Match(Base):
     __tablename__ = "matches"
 
     id = Column(String, primary_key=True, default=_uuid)
+    category = Column(Enum(MatchCategory, native_enum=False), default=MatchCategory.SINGLES, nullable=False)
+
     vanguard_id = Column(String, ForeignKey("players.id"), nullable=False)
     sentinel_id = Column(String, ForeignKey("players.id"), nullable=False)
     referee_id = Column(String, ForeignKey("players.id"), nullable=True)
+
+    # Only set for DOUBLES matches — NULL for SINGLES. "Team Vanguard" is
+    # vanguard_id + vanguard_partner_id; "Team Sentinel" is sentinel_id +
+    # sentinel_partner_id. vanguard_id is always the one who created the
+    # invite, so they're implicitly accepted — the other three each need
+    # to explicitly accept (see the *_accepted flags) before a doubles
+    # match can start. For SINGLES matches these three columns are just
+    # unused/NULL/False.
+    vanguard_partner_id = Column(String, ForeignKey("players.id"), nullable=True)
+    sentinel_partner_id = Column(String, ForeignKey("players.id"), nullable=True)
+    vanguard_partner_accepted = Column(Boolean, default=False, nullable=False)
+    sentinel_accepted = Column(Boolean, default=False, nullable=False)
+    sentinel_partner_accepted = Column(Boolean, default=False, nullable=False)
 
     vanguard_score = Column(Integer, default=0, nullable=False)
     sentinel_score = Column(Integer, default=0, nullable=False)
@@ -100,6 +131,8 @@ class Match(Base):
 
     vanguard = relationship("Player", foreign_keys=[vanguard_id])
     sentinel = relationship("Player", foreign_keys=[sentinel_id])
+    vanguard_partner = relationship("Player", foreign_keys=[vanguard_partner_id])
+    sentinel_partner = relationship("Player", foreign_keys=[sentinel_partner_id])
 
 
 class FriendshipStatus(str, enum.Enum):
